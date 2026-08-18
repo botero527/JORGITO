@@ -1,0 +1,592 @@
+/* style.css
+   Tema visual de Jorgito. La idea: mas oscuro y mas neon que Modulo 5,
+   estilo panel de control de nave espacial pero sin pasarse de payaso.
+   Usamos fuentes de sistema (no Google Fonts) a proposito: esta app corre
+   offline en PCs de planta, si dependemos de una fuente web y ese dia no
+   hay internet la fuente se cae fea. Mejor jugar con animacion/color que
+   con tipografia rara.
+
+   Cambio grande (18-ago-2026): se paso de tabla plana a un layout con
+   sidebar de filtros + resultados agrupados por cliente en tarjetas. Se
+   quitaron todas las reglas de <table>/scrollbar horizontal, ya no aplican. */
+
+:root {
+    --bg: #060810;
+    --bg-2: #0b0f1c;
+    --glass: rgba(255, 255, 255, 0.04);
+    --glass-borde: rgba(255, 255, 255, 0.08);
+    --cyan: #22e5ff;
+    --violeta: #8b5cf6;
+    --verde: #2dffa8;
+    --rojo: #ff5f7e;
+    --texto: #ffffff;
+    --texto-dim: #7c8aa8;
+    --fuente: "Segoe UI", "Inter", system-ui, -apple-system, Roboto, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--texto);
+    font-family: var(--fuente);
+    overflow-x: hidden;
+}
+
+#fondo-particulas {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    background: radial-gradient(ellipse at top, var(--bg-2), var(--bg) 70%);
+}
+
+.app {
+    position: relative;
+    z-index: 1;
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 28px 32px 60px;
+}
+
+/* ---------- header ---------- */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.header-titulo {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.btn-toggle-sidebar {
+    background: var(--glass);
+    border: 1px solid var(--glass-borde);
+    color: var(--cyan);
+    font-size: 1.1rem;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: border-color 0.2s ease, transform 0.15s ease;
+}
+.btn-toggle-sidebar:hover { border-color: var(--cyan); transform: translateY(-1px); }
+
+.logo-glow {
+    margin: 0;
+    font-size: 2.6rem;
+    font-weight: 800;
+    letter-spacing: 3px;
+    background: linear-gradient(90deg, var(--cyan), var(--violeta));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 30px rgba(34, 229, 255, 0.35);
+    animation: respirar-glow 4s ease-in-out infinite;
+}
+
+@keyframes respirar-glow {
+    0%, 100% { filter: drop-shadow(0 0 6px rgba(34, 229, 255, 0.25)); }
+    50% { filter: drop-shadow(0 0 18px rgba(139, 92, 246, 0.45)); }
+}
+
+.subtitulo {
+    display: block;
+    color: var(--texto-dim);
+    font-size: 0.85rem;
+    margin-top: 4px;
+    letter-spacing: 0.4px;
+}
+
+.header-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    color: var(--texto-dim);
+}
+
+.pulso-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--verde);
+    box-shadow: 0 0 8px var(--verde);
+    animation: pulso 1.6s ease-in-out infinite;
+}
+
+@keyframes pulso {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.75); }
+}
+
+/* ---------- glass base ---------- */
+.glass {
+    background: var(--glass);
+    border: 1px solid var(--glass-borde);
+    border-radius: 16px;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+}
+
+/* ---------- kpis ---------- */
+.kpis {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.kpi-card {
+    background: var(--glass);
+    border: 1px solid var(--glass-borde);
+    border-radius: 14px;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(34, 229, 255, 0.12);
+}
+
+.kpi-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--texto-dim);
+}
+
+.kpi-valor {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--texto);
+}
+
+.kpi-ok .kpi-valor { color: var(--verde); }
+.kpi-warn .kpi-valor { color: var(--rojo); }
+
+/* ---------- layout con sidebar ---------- */
+.layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 20px;
+    align-items: start;
+    transition: grid-template-columns 0.25s ease;
+}
+
+.app-con-sidebar.sidebar-cerrada .layout {
+    grid-template-columns: 0px 1fr;
+}
+
+.sidebar {
+    background: var(--glass);
+    border: 1px solid var(--glass-borde);
+    border-radius: 16px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    position: sticky;
+    top: 20px;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    transition: opacity 0.2s ease, padding 0.2s ease;
+}
+
+/* cuando esta "cerrada" no la sacamos del DOM (asi no perdemos el estado de
+   los selects), solo la encogemos a 0 y le quitamos el padding/opacity para
+   que no se vea nada y el grid le de todo el espacio a los resultados */
+.sidebar-cerrada {
+    opacity: 0;
+    padding: 0;
+    border: none;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.sidebar-seccion {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    position: relative;
+}
+
+.sidebar-seccion label {
+    font-size: 0.72rem;
+    color: var(--texto-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    padding-left: 22px;
+}
+
+.sidebar-paso {
+    position: absolute;
+    top: -1px;
+    left: 0;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: linear-gradient(90deg, var(--cyan), var(--violeta));
+    color: #05070d;
+    font-size: 0.65rem;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sidebar-separador {
+    border: none;
+    border-top: 1px solid var(--glass-borde);
+    margin: 4px 0;
+}
+
+.btn-ancho { width: 100%; text-align: center; }
+
+.contenido {
+    min-width: 0; /* para que el grid no se estire de mas con contenido ancho */
+}
+
+input[type="date"], input[type="text"], select {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-borde);
+    border-radius: 8px;
+    color: var(--texto);
+    padding: 8px 10px;
+    font-size: 0.85rem;
+    outline: none;
+    width: 100%;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* el <select> cerrado usa el rgba() de arriba y se ve bien porque esta sobre
+   nuestro fondo oscuro, pero el POPUP desplegado con las opciones lo dibuja
+   el sistema operativo/Chromium por fuera de nuestro layout - ahi el rgba()
+   transparente no hereda nuestro fondo oscuro, cae a blanco por defecto de
+   Windows. Con texto blanco (--texto) encima, las opciones quedaban invisibles
+   (solo se veia la que tenia el hover, porque ESE highlight si lo pone el
+   sistema con su propio contraste). Fix: fondo SOLIDO explicito en option,
+   Chromium/Edge (el mismo motor de WebView2 que usa el .exe final) si lo respeta. */
+select option {
+    background-color: #12162a;
+    color: var(--texto);
+}
+
+input[type="date"]:focus, input[type="text"]:focus, select:focus {
+    border-color: var(--cyan);
+    box-shadow: 0 0 0 3px rgba(34, 229, 255, 0.15);
+}
+
+.btn-primario {
+    background: linear-gradient(90deg, var(--cyan), var(--violeta));
+    border: none;
+    color: #05070d;
+    font-weight: 700;
+    padding: 10px 22px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    letter-spacing: 0.4px;
+    transition: filter 0.2s ease, transform 0.15s ease;
+}
+
+.btn-primario:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.btn-primario:active { transform: translateY(0); }
+
+.btn-secundario {
+    background: transparent;
+    border: 1px solid var(--glass-borde);
+    color: var(--texto-dim);
+    font-weight: 600;
+    padding: 10px 18px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    letter-spacing: 0.3px;
+    transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.btn-secundario:hover {
+    border-color: var(--cyan);
+    color: var(--cyan);
+}
+
+/* ---------- badges (se reusan en las tarjetas de zfer) ---------- */
+.badge {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+.badge-stock-si {
+    background: rgba(45, 255, 168, 0.12);
+    color: var(--verde);
+    border: 1px solid rgba(45, 255, 168, 0.35);
+}
+
+.badge-stock-no {
+    background: rgba(255, 95, 126, 0.1);
+    color: var(--rojo);
+    border: 1px solid rgba(255, 95, 126, 0.3);
+}
+
+.badge-rep {
+    background: rgba(139, 92, 246, 0.15);
+    color: var(--violeta);
+    border: 1px solid rgba(139, 92, 246, 0.35);
+}
+
+/* ---------- resultados agrupados por cliente ---------- */
+.sin-resultados {
+    text-align: center;
+    color: var(--texto-dim);
+    font-style: italic;
+    padding: 40px 20px;
+}
+
+.clientes-lista {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.cliente-card {
+    padding: 4px;
+    opacity: 0;
+    animation: cliente-entra 0.3s ease forwards;
+}
+
+@keyframes cliente-entra {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.cliente-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: none;
+    border: none;
+    color: var(--texto);
+    padding: 14px 16px;
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
+}
+
+.cliente-flecha {
+    color: var(--cyan);
+    transition: transform 0.2s ease;
+    font-size: 0.9rem;
+}
+.cliente-flecha.abierta { transform: rotate(90deg); }
+
+.cliente-nombre {
+    font-weight: 700;
+    font-size: 0.95rem;
+    flex: 1;
+}
+
+.cliente-resumen {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.cliente-cuerpo {
+    padding: 0 16px 16px;
+}
+
+.zfer-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+}
+
+.zfer-card {
+    display: flex;
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--glass-borde);
+    border-radius: 12px;
+    padding: 10px;
+    transition: border-color 0.2s ease, transform 0.15s ease;
+}
+
+.zfer-card:hover {
+    border-color: rgba(34, 229, 255, 0.3);
+    transform: translateY(-1px);
+}
+
+.zfer-plano-wrap {
+    flex-shrink: 0;
+    width: 72px;
+    height: 72px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.zfer-plano {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    cursor: zoom-in;
+    transition: filter 0.15s ease;
+}
+.zfer-plano:hover { filter: brightness(1.15); }
+
+.zfer-plano-vacio {
+    color: var(--texto-dim);
+    font-size: 0.62rem;
+    text-align: center;
+    padding: 4px;
+}
+
+.zfer-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.zfer-titulo {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.zfer-numero {
+    font-weight: 800;
+    font-size: 0.95rem;
+    color: var(--cyan);
+}
+
+.zfer-detalle {
+    font-size: 0.78rem;
+    color: var(--texto);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.zfer-detalle-chico {
+    font-size: 0.7rem;
+    color: var(--texto-dim);
+}
+
+.zfer-comparte {
+    font-size: 0.68rem;
+    color: var(--violeta);
+    margin-top: 2px;
+}
+
+/* ---------- modal de plano agrandado ---------- */
+.modal-plano {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 3, 8, 0.92);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    animation: modal-entra 0.15s ease;
+}
+.modal-plano[hidden] { display: none; }
+
+@keyframes modal-entra {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+#modal-plano-img {
+    max-width: 90vw;
+    max-height: 90vh;
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 0 60px rgba(34, 229, 255, 0.2);
+}
+
+.modal-plano-cerrar {
+    position: absolute;
+    top: 24px;
+    right: 32px;
+    background: var(--glass);
+    border: 1px solid var(--glass-borde);
+    color: var(--texto);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    font-size: 1.1rem;
+    cursor: pointer;
+}
+.modal-plano-cerrar:hover { border-color: var(--rojo); color: var(--rojo); }
+
+/* ---------- loading ---------- */
+/* BUG que nos comimos: el atributo "hidden" del HTML y un "display: flex" de
+   clase tienen la MISMA especificidad CSS, y como esta regla vive en nuestra
+   hoja de estilos (que le gana a la hoja por defecto del navegador), el
+   display:flex se queda ganando aunque el JS ponga hidden=true. Fix: la regla
+   [hidden] mas especifica (clase + atributo) fuerza el display:none. */
+.tabla-loading[hidden] {
+    display: none;
+}
+
+.tabla-loading {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 60px 20px;
+    color: var(--texto-dim);
+    font-size: 0.85rem;
+}
+
+.spinner {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 3px solid rgba(34, 229, 255, 0.15);
+    border-top-color: var(--cyan);
+    animation: girar 0.8s linear infinite;
+}
+
+@keyframes girar {
+    to { transform: rotate(360deg); }
+}
+
+/* responsive basico */
+@media (max-width: 900px) {
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .kpis .kpi-card:last-child { grid-column: span 2; }
+    .app { padding: 20px 16px 40px; }
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { position: static; max-height: none; }
+}

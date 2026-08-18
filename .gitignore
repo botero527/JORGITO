@@ -1,0 +1,17 @@
+# nunca subir esto, tiene las claves de las BDs
+.env
+
+# basura de python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# lo que genera pyinstaller cuando compilemos el exe
+build/
+dist/
+*.spec.bak
+
+# cache local / logs
+*.log
+temp_*/

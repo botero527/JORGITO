@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block titulo %}JORGITO{% endblock %}</title>
+    <!-- favicon puesto a mano con un data URI, asi no toca andar cargando un .ico
+         y ademas no truena con 404 en la consola cada vez que el navegador lo pide solo -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%23060810%22/><text x=%2250%22 y=%2268%22 font-size=%2260%22 text-anchor=%22middle%22 fill=%22%2322e5ff%22 font-family=%22monospace%22>J</text></svg>">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <!-- canvas del fondo animado, va detras de todo -->
+    <canvas id="fondo-particulas"></canvas>
+
+    {% block contenido %}{% endblock %}
+
+    <script src="{{ url_for('static', filename='js/particles.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block titulo %}JORGITO - Historico de Ventas{% endblock %}
+
+{% block contenido %}
+<div class="app app-con-sidebar">
+
+    <header class="header">
+        <div class="header-titulo">
+            <button id="btn-toggle-sidebar" class="btn-toggle-sidebar" type="button" title="Mostrar/ocultar filtros">☰</button>
+            <div>
+                <h1 class="logo-glow">JORGITO</h1>
+                <span class="subtitulo">Historico de ventas &middot; Genesis + SAP + Stock, todo en un solo lugar</span>
+            </div>
+        </div>
+        <div class="header-status">
+            <span class="pulso-dot" id="dot-estado"></span>
+            <span id="texto-estado">conectando...</span>
+        </div>
+    </header>
+
+    <!-- barra de KPIs, se llenan con JS cuando llega la data. Se queda oculta
+         hasta que se responda el flujo guiado (vehiculo -> pieza -> producto) -->
+    <section class="kpis" id="kpis" hidden>
+        <div class="kpi-card">
+            <span class="kpi-label">Registros</span>
+            <span class="kpi-valor" id="kpi-total">0</span>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-label">ZFER unicos</span>
+            <span class="kpi-valor" id="kpi-zfers">0</span>
+        </div>
+        <div class="kpi-card kpi-ok">
+            <span class="kpi-label">Zfer de stock</span>
+            <span class="kpi-valor" id="kpi-con-stock">0</span>
+        </div>
+        <div class="kpi-card kpi-warn">
+            <span class="kpi-label">No Zfer stock</span>
+            <span class="kpi-valor" id="kpi-sin-stock">0</span>
+        </div>
+        <div class="kpi-card">
+            <span class="kpi-label">Piezas fabricadas</span>
+            <span class="kpi-valor" id="kpi-piezas">0</span>
+        </div>
+    </section>
+
+    <div class="layout">
+        <!-- sidebar de filtros: se puede colapsar con el boton del header para
+             ver los resultados a pantalla completa. El orden es guiado (vehiculo
+             primero, de ahi para abajo van cascando) pero NADA es obligatorio,
+             se puede dejar cualquiera en "Todos" y saltar al resultado. -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-seccion">
+                <span class="sidebar-paso">1</span>
+                <label for="f-vehiculo">Vehiculo</label>
+                <select id="f-vehiculo"><option value="">Todos</option></select>
+            </div>
+            <div class="sidebar-seccion">
+                <span class="sidebar-paso">2</span>
+                <label for="f-parte">Tipo de pieza</label>
+                <select id="f-parte"><option value="">Todos</option></select>
+            </div>
+            <div class="sidebar-seccion">
+                <span class="sidebar-paso">3</span>
+                <label for="f-producto">Producto homologo</label>
+                <select id="f-producto"><option value="">Todos</option></select>
+            </div>
+            <div class="sidebar-seccion">
+                <label for="f-geometria">Geometria</label>
+                <select id="f-geometria"><option value="">Todos</option></select>
+            </div>
+            <div class="sidebar-seccion">
+                <label for="f-zfer">Buscar ZFER</label>
+                <input type="text" id="f-zfer" placeholder="ej. 700010891">
+            </div>
+            <hr class="sidebar-separador">
+            <div class="sidebar-seccion">
+                <label for="f-fecha-inicio">Desde</label>
+                <input type="date" id="f-fecha-inicio" value="{{ fecha_default_inicio }}">
+            </div>
+            <div class="sidebar-seccion">
+                <label for="f-fecha-fin">Hasta</label>
+                <input type="date" id="f-fecha-fin" value="{{ fecha_default_fin }}">
+            </div>
+            <button id="btn-consultar" class="btn-primario btn-ancho">Consultar</button>
+            <button id="btn-todo-historico" class="btn-secundario btn-ancho" type="button"
+                    title="Pone el rango de fechas al maximo y consulta - tarda mas que el default de 90 dias">
+                Todo el historico
+            </button>
+        </aside>
+
+        <!-- resultados: agrupados por cliente, y dentro de cada cliente 1 sola
+             tarjeta por ZFER (los repetidos se juntan, se ve cuantas veces salio) -->
+        <main class="contenido">
+            <div id="resultados-loading" class="tabla-loading" hidden>
+                <div class="spinner"></div>
+                <span>trayendo datos de Genesis + SAP + Productivity...</span>
+            </div>
+            <div id="clientes-lista" class="clientes-lista">
+                <!-- grupos de cliente se inyectan por JS -->
+            </div>
+        </main>
+    </div>
+
+</div>
+
+<!-- modal para agrandar el plano -->
+<div id="modal-plano" class="modal-plano" hidden>
+    <button class="modal-plano-cerrar" id="btn-cerrar-plano" type="button">✕</button>
+    <img id="modal-plano-img" src="" alt="plano">
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+{% endblock %}

@@ -9,7 +9,7 @@
         <div class="header-titulo">
             <button id="btn-toggle-sidebar" class="btn-toggle-sidebar" type="button" title="Mostrar/ocultar filtros">☰</button>
             <div>
-                <h1 class="logo-glow">JORGITO</h1>
+                <h1 class="logo-glow">ANALISIS DE ROTACION </h1>
                 <span class="subtitulo">Historico de ventas &middot; Genesis + SAP + Stock, todo en un solo lugar</span>
             </div>
         </div>
@@ -22,10 +22,6 @@
     <!-- barra de KPIs, se llenan con JS cuando llega la data. Se queda oculta
          hasta que se responda el flujo guiado (vehiculo -> pieza -> producto) -->
     <section class="kpis" id="kpis" hidden>
-        <div class="kpi-card">
-            <span class="kpi-label">Registros</span>
-            <span class="kpi-valor" id="kpi-total">0</span>
-        </div>
         <div class="kpi-card">
             <span class="kpi-label">ZFER unicos</span>
             <span class="kpi-valor" id="kpi-zfers">0</span>
@@ -50,43 +46,70 @@
              primero, de ahi para abajo van cascando) pero NADA es obligatorio,
              se puede dejar cualquiera en "Todos" y saltar al resultado. -->
         <aside class="sidebar" id="sidebar">
-            <div class="sidebar-seccion">
-                <span class="sidebar-paso">1</span>
-                <label for="f-vehiculo">Vehiculo</label>
-                <select id="f-vehiculo"><option value="">Todos</option></select>
-            </div>
-            <div class="sidebar-seccion">
-                <span class="sidebar-paso">2</span>
-                <label for="f-parte">Tipo de pieza</label>
-                <select id="f-parte"><option value="">Todos</option></select>
-            </div>
-            <div class="sidebar-seccion">
-                <span class="sidebar-paso">3</span>
-                <label for="f-producto">Producto homologo</label>
-                <select id="f-producto"><option value="">Todos</option></select>
-            </div>
-            <div class="sidebar-seccion">
-                <label for="f-geometria">Geometria</label>
-                <select id="f-geometria"><option value="">Todos</option></select>
-            </div>
-            <div class="sidebar-seccion">
-                <label for="f-zfer">Buscar ZFER</label>
-                <input type="text" id="f-zfer" placeholder="ej. 700010891">
+            <!-- Por ahora solo mostramos un puñado de clientes por defecto
+                 (ver CLIENTES_DEFAULT en main.js) - este toggle saca esa
+                 restriccion y muestra el resto de clientes tambien. Vive
+                 siempre visible, no es parte del flujo guiado de abajo. -->
+            <div class="sidebar-seccion sidebar-toggle-clientes">
+                <label class="check-todos">
+                    <input type="checkbox" id="f-todos-clientes">
+                    Mostrar TODOS los clientes
+                </label>
             </div>
             <hr class="sidebar-separador">
-            <div class="sidebar-seccion">
-                <label for="f-fecha-inicio">Desde</label>
-                <input type="date" id="f-fecha-inicio" value="{{ fecha_default_inicio }}">
+
+            <!-- PASO 1: Vehiculo (siempre visible) -->
+            <div class="sidebar-paso-contenedor" data-paso="1">
+                <div class="sidebar-seccion">
+                    <span class="sidebar-paso">1</span>
+                    <label for="f-vehiculo">Vehiculo</label>
+                    <select id="f-vehiculo"><option value="">Todos</option></select>
+                </div>
             </div>
-            <div class="sidebar-seccion">
-                <label for="f-fecha-fin">Hasta</label>
-                <input type="date" id="f-fecha-fin" value="{{ fecha_default_fin }}">
+
+            <!-- PASO 2: Tipo de pieza (aparece al elegir vehiculo) -->
+            <div class="sidebar-paso-contenedor" data-paso="2" hidden>
+                <div class="sidebar-seccion">
+                    <span class="sidebar-paso">2</span>
+                    <label for="f-parte">Tipo de pieza</label>
+                    <select id="f-parte"><option value="">Todos</option></select>
+                </div>
             </div>
-            <button id="btn-consultar" class="btn-primario btn-ancho">Consultar</button>
-            <button id="btn-todo-historico" class="btn-secundario btn-ancho" type="button"
-                    title="Pone el rango de fechas al maximo y consulta - tarda mas que el default de 90 dias">
-                Todo el historico
-            </button>
+
+            <!-- PASO 3: Producto homologo (aparece al elegir tipo de pieza) -->
+            <div class="sidebar-paso-contenedor" data-paso="3" hidden>
+                <div class="sidebar-seccion">
+                    <span class="sidebar-paso">3</span>
+                    <label for="f-producto">Producto homologo</label>
+                    <select id="f-producto"><option value="">Todos</option></select>
+                </div>
+            </div>
+
+            <!-- RESTO: Geometria, ZFER, fechas, botones (aparece al elegir producto) -->
+            <div class="sidebar-resto" hidden>
+                <div class="sidebar-seccion">
+                    <label for="f-geometria">Geometria</label>
+                    <select id="f-geometria"><option value="">Todos</option></select>
+                </div>
+                <div class="sidebar-seccion">
+                    <label for="f-zfer">Buscar ZFER</label>
+                    <input type="text" id="f-zfer" placeholder="ej. 700010891">
+                </div>
+                <hr class="sidebar-separador">
+                <div class="sidebar-seccion">
+                    <label for="f-fecha-inicio">Desde</label>
+                    <input type="date" id="f-fecha-inicio" value="{{ fecha_default_inicio }}">
+                </div>
+                <div class="sidebar-seccion">
+                    <label for="f-fecha-fin">Hasta</label>
+                    <input type="date" id="f-fecha-fin" value="{{ fecha_default_fin }}">
+                </div>
+                <button id="btn-consultar" class="btn-primario btn-ancho">Consultar</button>
+                <button id="btn-todo-historico" class="btn-secundario btn-ancho" type="button"
+                        title="Pone el rango de fechas al maximo y consulta - tarda mas que el default de 90 dias">
+                    Todo el historico
+                </button>
+            </div>
         </aside>
 
         <!-- resultados: agrupados por cliente, y dentro de cada cliente 1 sola
@@ -108,6 +131,54 @@
 <div id="modal-plano" class="modal-plano" hidden>
     <button class="modal-plano-cerrar" id="btn-cerrar-plano" type="button">✕</button>
     <img id="modal-plano-img" src="" alt="plano">
+</div>
+
+<!-- comparar planos: pantalla completa, mitad y mitad, con stock a la
+     izquierda y sin stock a la derecha. Solo se abre con el boton "Comparar
+     planos" de cada tarjeta de cliente - la vista individual (arriba) sigue
+     funcionando igual, esto es aparte. -->
+<div id="modal-comparar" class="modal-comparar" hidden>
+    <div class="comparar-header">
+        <div>
+            <h2 class="comparar-titulo">Comparar planos</h2>
+            <span class="comparar-cliente" id="comparar-cliente-nombre"></span>
+        </div>
+        <button class="modal-plano-cerrar" id="btn-cerrar-comparar" type="button">✕</button>
+    </div>
+
+    <div class="comparar-body">
+        <div class="comparar-lado comparar-lado-con">
+            <span class="comparar-lado-badge badge badge-stock-si">ZFER DE STOCK</span>
+            <select id="comparar-select-con"></select>
+            <div class="comparar-plano-wrap">
+                <img id="comparar-img-con" src="" alt="plano con stock">
+            </div>
+            <div class="comparar-info" id="comparar-info-con"></div>
+        </div>
+
+        <div class="comparar-vs">VS</div>
+
+        <div class="comparar-lado comparar-lado-sin">
+            <span class="comparar-lado-badge badge badge-stock-no">ZFER NO STOCK</span>
+            <select id="comparar-select-sin"></select>
+            <div class="comparar-plano-wrap">
+                <img id="comparar-img-sin" src="" alt="plano sin stock">
+            </div>
+            <div class="comparar-info" id="comparar-info-sin"></div>
+        </div>
+    </div>
+
+    <div class="comparar-comentarios glass">
+        <h3 class="comparar-comentarios-titulo">💬 Comentarios de esta comparacion</h3>
+        <div id="comparar-comentarios-lista" class="comparar-comentarios-lista">
+            <div class="sin-resultados">sin comentarios todavia - se el primero</div>
+        </div>
+        <div class="comparar-comentario-form">
+            <input type="text" id="comparar-usuario" placeholder="Tu nombre (opcional)" class="comparar-input-nombre">
+            <textarea id="comparar-comentario-texto" placeholder="Escribe un comentario sobre esta comparacion..." rows="2"></textarea>
+            <button id="btn-guardar-comentario" class="btn-primario" type="button">Guardar comentario</button>
+        </div>
+    </div>
 </div>
 {% endblock %}
 

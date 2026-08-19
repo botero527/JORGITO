@@ -38,7 +38,6 @@ def _crear_conexion(nombre_bd):
         timeout=60,
     )
 
-
 def _get_pool(nombre_bd):
     if nombre_bd not in _pools:
         _pools[nombre_bd] = queue.Queue(maxsize=_POOL_MAX)
@@ -86,5 +85,32 @@ def ejecutar(nombre_bd, sql, params=None):
         filas = cur.fetchall()
         cur.close()
         return filas
+    finally:
+        _devolver_conexion(nombre_bd, conn)
+
+
+def ejecutar_escritura(nombre_bd, sql, params=None):
+    """
+    Para INSERT/UPDATE/DDL - a diferencia de ejecutar(), esto SI hace commit
+    explicito. pymssql NO autocommitea por defecto, si no hacemos commit el
+    cambio se pierde en cuanto la conexion vuelve al pool y se reusa (o peor,
+    queda una transaccion abierta colgada bloqueando cosas).
+
+    Si el sql termina en un SELECT (ej. "INSERT ...; SELECT SCOPE_IDENTITY()")
+    devolvemos esa fila (para poder leer el ID nuevo). Si no hay result set
+    (un CREATE TABLE, por ejemplo), pymssql tira excepcion al pedir fetchone
+    y ahi devolvemos None sin problema - es normal, no todo DDL devuelve fila.
+    """
+    conn = _obtener_conexion(nombre_bd)
+    try:
+        cur = conn.cursor()
+        cur.execute(sql, params or ())
+        try:
+            fila = cur.fetchone()
+        except Exception:
+            fila = None
+        conn.commit()
+        cur.close()
+        return fila
     finally:
         _devolver_conexion(nombre_bd, conn)

@@ -20,8 +20,7 @@
 # los ZFER que por algun motivo no tengan fila en MaterialSpecs.
 
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
-from db import ejecutar
+from db import ejecutar, ejecutar_escritura
 
 _ESQUEMA_GENESIS = "Seed_Web_GenesisSap_SGlass"
 
@@ -47,6 +46,43 @@ _ATRIBUTOS_ZFER_SAP = (
     "Z_AGP_VERSION",
     "Z_GEOMETRY_TYPE",
 )
+
+
+def _agrupar_producto(nombre):
+    """
+    Replica el CASE WHEN de la query SQL que agrupa ProductName crudo en
+    "familias" comerciales. Necesitamos esto en Python para poder hacer el
+    lookup contra el Master de reorden, que usa el nombre ORIGINAL del
+    producto (mismo que ProductName en Genesis) pero el historico trae
+    ProductoHomologo (el nombre agrupado). Si no normalizamos, el lookup
+    nunca coincide y el stock sale mal.
+    """
+    if not nombre:
+        return nombre
+    n = nombre.strip()
+    if n == "Estándar VPAM 3 15mm":
+        return "Estandar 15mm"
+    if n == "Estándar 69mm TPS MÉXICO":
+        return "Estandar 69mm"
+    if n == "B33 GEN2":
+        return "B33 24mm"
+    if "42" in n:
+        return "MultiHit 42mm"
+    if "iB33" in n:
+        return "iB33 18mm"
+    if "18" in n:
+        return "Estandar 18mm"
+    if "19" in n:
+        return "Light Weight 19mm"
+    if "16" in n:
+        return "Estandar 16mm"
+    if "23mm" in n:
+        return "B33 24mm"
+    if "32mm" in n:
+        return "Estandar 32mm"
+    if "69mm" in n:
+        return "Estandar 69mm"
+    return n
 
 
 def _limpiar_status(status_id, status_name):
@@ -137,6 +173,8 @@ def q_historico_ventas(fecha_inicio, fecha_fin, vehiculos=None):
             Specs.FormulaCode AS Formula,
             Specs.GeometryType,
             Specs.BehaviorDifferentials,
+            Specs.ColorID,
+            Colores.ColorName_ES AS Color,
             Specs.COSpecImageUrl,
             Specs.BRSpecImageUrl,
             Specs.PESpecImageUrl,
@@ -149,6 +187,7 @@ def q_historico_ventas(fecha_inicio, fecha_fin, vehiculos=None):
             LEFT JOIN {_ESQUEMA_GENESIS}.Materials Vehicles ON Base.OrderMaterialID = Vehicles.MaterialID
             LEFT JOIN {_ESQUEMA_GENESIS}.MaterialSpecs Specs ON Dets.SpecID = Specs.SpecID
             LEFT JOIN {_ESQUEMA_GENESIS}.Parts Parts ON Dets.PartID = Parts.PartID
+            LEFT JOIN {_ESQUEMA_GENESIS}.MatColors Colores ON Specs.ColorID = Colores.ColorID
         WHERE Base.SapPlantID = 'CO01'
             AND Base.SapSalesOrg = 'MX01'
             AND OrderStatus.StatusName NOT IN ('Cancelado', 'Rascunho', 'Engenharia', 'Aguardando Revisao', 'Em Processamento')
@@ -276,17 +315,18 @@ def obtener_historico_enriquecido(fecha_inicio, fecha_fin):
     # Genesis. Por eso el Master se trae PRIMERO (es chiquito, 310 filas, no
     # se siente) y su lista de vehiculos se manda directo al WHERE de la query
     # de Genesis - asi nunca bajamos las ~60 mil filas de mas que de todas
-    # formas iban a sobrar. Historico y stock si quedan en paralelo entre si
-    # (son servidores independientes, no hay razon para esperar al uno para
-    # arrancar el otro).
+    # formas iban a sobrar.
+    #
+    # OJO - esto se repitio una vez y toco limpiarlo de nuevo: NO metas
+    # ThreadPoolExecutor + q_stock_activo() aca. Desde que el stock se decide
+    # 100% con el Master (zfers_master mas abajo), esa consulta a
+    # MX_StocksManager_ActiveStocks es codigo muerto - su resultado no se usa
+    # para nada y es pesada (bajaba la respuesta de ~16s a ~55s con el rango
+    # completo). Si en el futuro se necesita el stock fisico real de nuevo,
+    # revive q_stock_activo() a proposito, no "por si acaso".
     master_filas = q_reorden_master()
     vehiculos_master = sorted({m.get("Vehiculo") for m in master_filas if m.get("Vehiculo")})
-
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        futuro_filas = pool.submit(q_historico_ventas, fecha_inicio, fecha_fin, vehiculos_master)
-        futuro_stock = pool.submit(q_stock_activo)
-        filas = futuro_filas.result()
-        stock_filas = futuro_stock.result()
+    filas = q_historico_ventas(fecha_inicio, fecha_fin, vehiculos_master)
 
     # fallback SAP: solo para los que de verdad quedaron cojos
     # OJO: con rangos de fecha viejos aparecen pedidos donde SpecID no es un ZFER
@@ -308,14 +348,16 @@ def obtener_historico_enriquecido(fecha_inicio, fecha_fin):
                     if not fila.get(campo):
                         fila[campo] = valor
 
-    zfers_con_stock = {str(f["Material"]) for f in stock_filas}
-
     # armamos el mapa (Vehiculo, Producto, Pieza) -> {estandar, alterno} y de
     # paso quien comparte cada ZFEREstandar (para el aviso "comparte stock con...")
+    # OJO: normalizamos el Producto del Master con _agrupar_producto para que
+    # coincida con ProductoHomologo del historico. Sin esto el lookup NUNCA
+    # encuentra match (el Master tiene "B33 GEN2" pero el historico trae
+    # "B33 24mm") y todos los ZFER caen al else con stock incorrecto.
     master_por_combo = {}
     vehiculos_por_estandar = defaultdict(set)
     for m in master_filas:
-        clave = (m.get("Vehiculo"), m.get("Producto"), m.get("Pieza"))
+        clave = (m.get("Vehiculo"), _agrupar_producto(m.get("Producto")), m.get("Pieza"))
         master_por_combo[clave] = {
             "estandar": str(m["ZFEREstandar"]) if m.get("ZFEREstandar") else None,
             "alterno": str(m["ZFERAlterno"]) if m.get("ZFERAlterno") else None,
@@ -323,29 +365,155 @@ def obtener_historico_enriquecido(fecha_inicio, fecha_fin):
         if m.get("ZFEREstandar"):
             vehiculos_por_estandar[str(m["ZFEREstandar"])].add(m.get("Vehiculo"))
 
+    # construimos el set de ZFER que el Master considera "con stock": SOLO
+    # la columna ZFEREstandar (el Alterno queda afuera de esta cuenta a
+    # proposito, asi lo pidieron - el Alterno se sigue mostrando como dato
+    # informativo en la tarjeta pero ya no cuenta para decidir EsStock).
+    zfers_master = {str(m["ZFEREstandar"]) for m in master_filas if m.get("ZFEREstandar")}
+
     for fila in filas:
         zfer = str(fila.get("ZFER") or "")
+
+        # REGLA DE NEGOCIO (pedida explicitamente, sin excepciones): un ZFER
+        # "tiene stock" si y solo si EL ZFER DE ESTA LINEA aparece como
+        # ZFEREstandar (SOLO esa columna, el Alterno no cuenta) de CUALQUIER
+        # combo del Master - no importa si es el estandar de ESTE combo
+        # puntual o de otro. Punto, no se mira nada mas (nada de intersecciones
+        # de sets por combo - eso fue el bug que marcaba TODO el combo como
+        # "con stock" sin importar cual ZFER real tuviera cada linea, ya lo
+        # arreglamos una vez, que no se repita).
+        fila["EsStock"] = "Si" if zfer in zfers_master else "No"
+
+        # esto de aca es SOLO informativo (para el aviso "comparte stock con..."
+        # y para mostrar cual es el Estandar/Alterno oficial de este combo) -
+        # no afecta el EsStock de arriba.
         clave = (fila.get("Vehiculo"), fila.get("ProductoHomologo"), fila.get("Parte"))
         datos_master = master_por_combo.get(clave)
-
         if datos_master:
-            # esta combinacion SI esta gobernada por el Master: el ZFER que manda
-            # para saber si hay stock es el Estandar (o el Alterno si el estandar
-            # no tiene) - no el ZFER literal de esta linea del historico.
-            zfers_a_chequear = {v for v in (datos_master["estandar"], datos_master["alterno"]) if v}
-            fila["EsStock"] = "Si" if zfers_a_chequear & zfers_con_stock else "No"
             fila["ZFEREstandarMaster"] = datos_master["estandar"]
             fila["ZFERAlternoMaster"] = datos_master["alterno"]
-
             otros_vehiculos = vehiculos_por_estandar.get(datos_master["estandar"], set()) - {fila.get("Vehiculo")}
             fila["ComparteStockCon"] = sorted(v for v in otros_vehiculos if v)
         else:
-            # no esta en el Master (la mayoria de los ZFER historicos no estan,
-            # el Master solo cubre 19 vehiculos curados) - mismo comportamiento
-            # de antes, chequeamos el ZFER tal cual salio en la linea.
-            fila["EsStock"] = "Si" if zfer in zfers_con_stock else "No"
             fila["ZFEREstandarMaster"] = None
             fila["ZFERAlternoMaster"] = None
             fila["ComparteStockCon"] = []
 
     return filas
+
+
+# ============================================================================
+# Comparacion de planos + comentarios (19-ago-2026)
+# Esta parte pega a la BD de INGENIERIA (agpcolombia.database.windows.net /
+# AGP_Ingenieria), la unica de lectura Y escritura de todo el proyecto. Ya
+# tenia esquemas propios de otros proyectos (AUTOMATA, GMB, HTA, INV, mallas,
+# itg) asi que seguimos el mismo patron: esquema propio JORGITO, no tocamos
+# nada de los demas.
+# ============================================================================
+
+_ESQUEMA_JORGITO = "JORGITO"
+_TABLA_COMENTARIOS = "ComentariosComparacionPlanos"
+
+
+def asegurar_tabla_comentarios():
+    """
+    Crea el esquema JORGITO y la tabla de comentarios si todavia no existen.
+    Se llama UNA vez al arrancar app.py. Es idempotente (IF NOT EXISTS), no
+    pasa nada si se llama de nuevo en cada arranque.
+
+    OJO con "SELECT 1" a secas contra esta conexion: como TODAS las conexiones
+    del proyecto se abren con as_dict=True (ver db.py), pymssql no puede armar
+    un dict de una columna sin nombre y tira ColumnsWithoutNamesError. Por eso
+    aca SIEMPRE hay que ponerle alias ("SELECT 1 AS existe"), ya nos comimos
+    ese error probando esto a mano antes de meterlo al codigo.
+    """
+    ejecutar_escritura("ingenieria", f"""
+        IF NOT EXISTS (SELECT 1 AS existe FROM sys.schemas WHERE name = '{_ESQUEMA_JORGITO}')
+            EXEC('CREATE SCHEMA {_ESQUEMA_JORGITO}')
+    """)
+    ejecutar_escritura("ingenieria", f"""
+        IF NOT EXISTS (
+            SELECT 1 AS existe FROM sys.tables t JOIN sys.schemas s ON t.schema_id = s.schema_id
+            WHERE s.name = '{_ESQUEMA_JORGITO}' AND t.name = '{_TABLA_COMENTARIOS}'
+        )
+        CREATE TABLE {_ESQUEMA_JORGITO}.{_TABLA_COMENTARIOS} (
+            ID INT IDENTITY(1,1) PRIMARY KEY,
+            FechaCreacion DATETIME NOT NULL DEFAULT GETDATE(),
+            Usuario VARCHAR(200) NULL,
+            Cliente VARCHAR(300) NOT NULL,
+            ZferConStock VARCHAR(50) NOT NULL,
+            VehiculoConStock VARCHAR(300) NULL,
+            ProductoConStock VARCHAR(300) NULL,
+            ZferSinStock VARCHAR(50) NOT NULL,
+            VehiculoSinStock VARCHAR(300) NULL,
+            ProductoSinStock VARCHAR(300) NULL,
+            FiltrosActivosJson NVARCHAR(MAX) NULL,
+            Comentario NVARCHAR(MAX) NOT NULL
+        )
+    """)
+
+    # AMPLIACION (19-ago-2026): ahora se puede comparar un ZFER sin stock de
+    # UN cliente contra un ZFER con stock de OTRO cliente distinto (antes los
+    # dos lados eran siempre del mismo cliente). La columna vieja `Cliente`
+    # se queda tal cual (nadie la borra, por compatibilidad con lo que ya
+    # hubiera - aunque hoy la tabla esta vacia de comentarios reales) y se
+    # agregan estas 2 nuevas para saber el cliente de CADA lado por separado.
+    # ALTER TABLE idempotente (checa sys.columns antes) - no rompe nada si la
+    # columna ya existe de una corrida anterior.
+    for columna in ("ClienteConStock", "ClienteSinStock"):
+        ejecutar_escritura("ingenieria", f"""
+            IF NOT EXISTS (
+                SELECT 1 AS existe FROM sys.columns
+                WHERE object_id = OBJECT_ID('{_ESQUEMA_JORGITO}.{_TABLA_COMENTARIOS}')
+                    AND name = '{columna}'
+            )
+            ALTER TABLE {_ESQUEMA_JORGITO}.{_TABLA_COMENTARIOS} ADD {columna} VARCHAR(300) NULL
+        """)
+
+
+def q_guardar_comentario_comparacion(datos):
+    """
+    Guarda un comentario de la comparacion de planos. `datos` es un dict con
+    las llaves: usuario, cliente, cliente_con_stock, cliente_sin_stock,
+    zfer_con_stock, vehiculo_con_stock, producto_con_stock, zfer_sin_stock,
+    vehiculo_sin_stock, producto_sin_stock, filtros_json (el estado de TODOS
+    los filtros activos en ese momento, serializado a texto JSON - asi queda
+    guardado bien detallado de que contexto tenia la app cuando alguien
+    comento, tal como lo pidieron), comentario.
+
+    OJO: desde que se puede comparar un ZFER sin stock de un cliente contra
+    uno con stock de OTRO cliente, `cliente` (la columna vieja) queda
+    apuntando al cliente del lado SIN STOCK (es "de quien es el problema" que
+    se esta tratando de resolver) - `cliente_con_stock`/`cliente_sin_stock`
+    son los datos precisos de cada lado por separado.
+
+    Devuelve el ID nuevo (via SCOPE_IDENTITY, en el mismo batch del INSERT).
+    """
+    sql = f"""
+        INSERT INTO {_ESQUEMA_JORGITO}.{_TABLA_COMENTARIOS}
+            (Usuario, Cliente, ClienteConStock, ClienteSinStock, ZferConStock, VehiculoConStock,
+             ProductoConStock, ZferSinStock, VehiculoSinStock, ProductoSinStock, FiltrosActivosJson, Comentario)
+        VALUES (%(usuario)s, %(cliente)s, %(cliente_con_stock)s, %(cliente_sin_stock)s, %(zfer_con_stock)s,
+                %(vehiculo_con_stock)s, %(producto_con_stock)s, %(zfer_sin_stock)s, %(vehiculo_sin_stock)s,
+                %(producto_sin_stock)s, %(filtros_json)s, %(comentario)s);
+        SELECT SCOPE_IDENTITY() AS ID, GETDATE() AS FechaCreacion;
+    """
+    return ejecutar_escritura("ingenieria", sql, datos)
+
+
+def q_listar_comentarios_comparacion(zfer_con_stock, zfer_sin_stock):
+    """
+    Historial de comentarios para ESTE par exacto de ZFER (con stock / sin
+    stock) que se esta comparando ahora. Mas nuevo primero. La llave sigue
+    siendo el PAR de ZFER (no el cliente), asi que esto ya soporta solo sin
+    cambios los pares entre clientes distintos.
+    """
+    sql = f"""
+        SELECT ID, FechaCreacion, Usuario, Cliente, ClienteConStock, ClienteSinStock,
+               ZferConStock, VehiculoConStock, ProductoConStock, ZferSinStock,
+               VehiculoSinStock, ProductoSinStock, FiltrosActivosJson, Comentario
+        FROM {_ESQUEMA_JORGITO}.{_TABLA_COMENTARIOS}
+        WHERE ZferConStock = %(zfer_con_stock)s AND ZferSinStock = %(zfer_sin_stock)s
+        ORDER BY FechaCreacion DESC
+    """
+    return ejecutar("ingenieria", sql, {"zfer_con_stock": zfer_con_stock, "zfer_sin_stock": zfer_sin_stock})
